@@ -12,3 +12,4 @@ oled_SSD1306.c
 .gitignore.swp
 *.o.cmd
 *.order
+template_i2c/
