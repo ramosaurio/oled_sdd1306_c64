@@ -8,6 +8,7 @@
 #include <linux/uaccess.h>
 #include <linux/miscdevice.h> // misc dev
 #include <linux/i2c.h>
+#include <linux/vmalloc.h>
 #include "fonts/myc64_lower.h"
 
 
@@ -22,21 +23,61 @@
 /****************************************************************************/
 static struct i2c_adapter * my_adap;
 static struct i2c_client * my_client;
-static char prueba_buffer[1024];
 
+
+/****************************************************************************/
+/* Buffer de escritura                                                      */
+/****************************************************************************/
+
+typedef struct _buffer  Buffer;
+
+struct _buffer {
+	char *charBuffer;
+	int pagina;
+	int columna;	
+
+};
+
+ 
+static Buffer *buffer;
+
+/*****************************************/
+/* static void write_buffer(char letra); */
+/* se encarga de inroducir las letras en 
+ * el buffer.
+ * Aun hay que implementar cuando el buff
+ * er esta lleno                        */
+
+static void write_buffer(char letra){
+	int pos;
+
+	if(buffer->pagina==0) pos = buffer->columna;
+	else pos = ((buffer->pagina)*16)+buffer->columna;
+	
+
+
+	if(buffer->columna==15 ){
+		buffer->columna = 0;
+		buffer->pagina++;
+	}else buffer->columna++;
+
+
+
+	printk(KERN_INFO"POS- %d\n",pos);
+	buffer->charBuffer[pos]=letra;
+}
 static ssize_t sdd1306_write(struct file *file, const char __user *buf,
                           size_t count, loff_t *ppos)
 {
+	char letra;
 
-
-    if (copy_from_user( prueba_buffer, buf, 1 )) {
+    if (copy_from_user( &letra, buf, 1 )) {
         return -EFAULT;
     }
-	
-	printk(KERN_INFO "IMPRESION - %s\n", prueba_buffer);
-
-    return 1;
-
+	write_buffer(letra);
+    printk(KERN_INFO " BUFFER-> )%s",buffer->charBuffer);
+	printk(KERN_INFO "C: %d\tP: %d\n",buffer->columna,buffer->pagina);
+	return 1;
 }
 
 
@@ -70,7 +111,8 @@ void r_cleanup(void)
 {
 	printk(KERN_NOTICE "%s module cleaning up...\n", KBUILD_MODNAME);
     if (sdd1306_miscdev.this_device) misc_deregister(&sdd1306_miscdev);
-	
+	vfree(buffer->charBuffer);
+	vfree(buffer);	
 	printk(KERN_NOTICE "Done. Bye from %s module\n", KBUILD_MODNAME);
     return;
 
@@ -86,9 +128,17 @@ int r_init(void)
 		r_cleanup();
 		return res;
 	}
+ 	printk(KERN_NOTICE "%s - Buffer config ... \n",KBUILD_MODNAME);
+	buffer = (Buffer* )vmalloc(sizeof(Buffer));
+	buffer->charBuffer = (char*)vmalloc(sizeof(char)*128);
+	buffer->pagina = 0;
+	buffer->columna = 0;
 	
-	return res;
+	memset((buffer->charBuffer),'\0',sizeof(char)*128);
 
+		printk(KERN_NOTICE "%s - Fin de la configuracion inicial\n",KBUILD_MODNAME);
+	return res;
+	
 }
 
 
