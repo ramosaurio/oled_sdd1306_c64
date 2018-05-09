@@ -13,3 +13,7 @@ oled_SSD1306.c
 *.o.cmd
 *.order
 template_i2c/
+*.test
+pruebaBuffer.c
+*.c.swp
+.tmp_Versions/

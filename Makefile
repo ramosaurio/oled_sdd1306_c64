@@ -5,7 +5,7 @@ red:=$(shell tput setaf 1)
 green:=$(shell tput setaf 2)
 reset:=$(shell tput sgr0)
 
-MODULE=oled_SSD1306
+MODULE=oled_SSD1306C64
 
 ifndef MODULE
 $(error $(red)variable MODULE no definida, usar: $(reset) MODULE=<nombre> make)
