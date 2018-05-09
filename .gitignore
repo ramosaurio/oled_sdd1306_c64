@@ -8,3 +8,7 @@ oled_SSD1306.c
 *.o
 *.dtbo
 *.dts
+*.ko
+.gitignore.swp
+*.o.cmd
+*.order
