@@ -1,0 +1,10 @@
+*.ko.cmd
+*.mod.o.cmd
+*.symvers
+*.mod.ko
+*.mod.c
+*.mod.o
+oled_SSD1306.c
+*.o
+*.dtbo
+*.dts
