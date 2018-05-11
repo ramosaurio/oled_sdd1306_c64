@@ -17,3 +17,4 @@ template_i2c/
 pruebaBuffer.c
 *.c.swp
 .tmp_versions/
+*.backup.c
