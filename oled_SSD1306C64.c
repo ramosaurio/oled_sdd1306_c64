@@ -29,17 +29,19 @@ static struct i2c_client * my_client;
 /* Buffer de escritura                                                      */
 /****************************************************************************/
 
-typedef struct _buffer  Buffer;
+typedef struct _oled  Screen;
 
-struct _buffer {
-	char *charBuffer;
+struct _oled{
+		
+	char *textBuffer;
+	uint8_t *screenBuffer;
 	int pagina;
 	int columna;	
 
 };
 
  
-static Buffer *buffer;
+static Screen *screen;
 
 /*****************************************/
 /* static void write_buffer(char letra); */
@@ -48,23 +50,35 @@ static Buffer *buffer;
  * Aun hay que implementar cuando el buff
  * er esta lleno                        */
 
-static void write_buffer(char letra){
-	int pos;
-
-	if(buffer->pagina==0) pos = buffer->columna;
-	else pos = ((buffer->pagina)*16)+buffer->columna;
+static void write(char letra){
+	int posText,posScreen;
+	uint16_t ascii,i;
+	ascii = (uint16_t) letra;
+	if(screen->pagina == 0){
+		posText = screen->columna;
+		posScreen = screen->columna * 8;	
+	} 
+	else{
+		posText = (((screen->pagina)%8)*16)+screen->columna;
+		posScreen = (((screen->pagina)%8)*128) + (screen->columna*8);
+	
+	} 
 	
 
+	screen->textBuffer[posText] = letra;
 
-	if(buffer->columna==15 ){
-		buffer->columna = 0;
-		if(pagina<7)buffer->pagina++; 
-	}else buffer->columna++;
+	for(i = 0; i<8; i++){
+		screen->screenBuffer[posScreen+i] = font[ascii*8+i];
+	}
+
+	if(screen->columna == 15){
+		screen->columna = 0;
+		screen->pagina++;
+	}else{
+		screen->columna++;
+	}
 
 
-
-	printk(KERN_INFO"POS- %d\n",pos);
-	buffer->charBuffer[pos]=letra;
 }
 /****************************************************************************/
 // write data byte througth i2c client
@@ -212,11 +226,11 @@ static ssize_t sdd1306_write(struct file *file, const char __user *buf,
         return -EFAULT;
     }
 	
-	write_buffer(letra);
+	write(letra);
 	
-    printk(KERN_INFO " BUFFER-> )%s",buffer->charBuffer);
-	printk(KERN_INFO "C: %d\tP: %d\n",buffer->columna,buffer->pagina);
-    printk(KERN_INFO " uinst16_6 %d\n",(uint16_t)letra);	
+  //  printk(KERN_INFO " BUFFER-> )%s",buffer->charBuffer);
+//	printk(KERN_INFO "C: %d\tP: %d\n",buffer->columna,buffer->pagina);
+ //   printk(KERN_INFO " uinst16_6 %d\n",(uint16_t)letra);	
 	ascichar = (uint16_t)letra;
 	ascichar = ascichar*8;
 	display(my_client,ascichar);
@@ -255,8 +269,9 @@ void r_cleanup(void)
 {
 	printk(KERN_NOTICE "%s module cleaning up...\n", KBUILD_MODNAME);
     if (sdd1306_miscdev.this_device) misc_deregister(&sdd1306_miscdev);
-	vfree(buffer->charBuffer);
-	vfree(buffer);
+	vfree(screen->screenBuffer);
+	vfree(screen->textBuffer);
+	vfree(screen);
     printk(KERN_NOTICE "Unregistering i2c client\n");
     printk(KERN_NOTICE "Clearing buffer...\n");
     clear_buffer();
@@ -281,13 +296,17 @@ int r_init(void)
 		return res;
 	}
  	printk(KERN_NOTICE "%s - Buffer config ... \n",KBUILD_MODNAME);
-	buffer = (Buffer* )vmalloc(sizeof(Buffer));
-	buffer->charBuffer = (char*)vmalloc(sizeof(char)*128);
-	buffer->pagina = 0;
-	buffer->columna = 0;
+	screen = (Screen* )vmalloc(sizeof(Screen));
+	screen->textBuffer = (char*)vmalloc(sizeof(char)*128);
+	screen->screenBuffer = (uint8_t*)vmalloc(sizeof(uint8_t)*1024);
+	screen->pagina = 0;
+	screen->columna = 0;
 	
-	memset((buffer->charBuffer),'\0',sizeof(char)*128);
-    printk(KERN_NOTICE "Connecting to adapter i2c-1\n");
+	
+	memset((screen->textBuffer),'\0',sizeof(char)*128);
+	memset((screen->screenBuffer),0,(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8));
+    
+	printk(KERN_NOTICE "Connecting to adapter i2c-1\n");
     my_adap = i2c_get_adapter(1); // 1 means i2c-1 bus
     if(my_adap==NULL)
     {
