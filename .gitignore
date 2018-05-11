@@ -18,3 +18,5 @@ pruebaBuffer.c
 *.c.swp
 .tmp_versions/
 *.backup.c
+*.tmp
+*.swp
