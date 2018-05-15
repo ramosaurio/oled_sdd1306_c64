@@ -11,7 +11,7 @@
 #include <linux/vmalloc.h>
 #include "fonts/myc64_lower.h"
 
-
+// TEMPLATE
 
 /****************************************************************************/
 // Globals
@@ -307,14 +307,14 @@ int r_init(void)
 	memset((screen->screenBuffer),0,(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8));
     
 	printk(KERN_NOTICE "Connecting to adapter i2c-1\n");
-    my_adap = i2c_get_adapter(1); // 1 means i2c-1 bus
+   // 1 means i2c-1 bus
     if(my_adap==NULL)
     {
 		printk(KERN_ERR "ERROR: No i2c adapter found\n");
 		return -ENODEV;
 	}
     printk(KERN_NOTICE "Creating new i2c client at 0x3c address\n");
-    my_client = i2c_new_dummy (my_adap, SSD1306_I2C_ADDRESS);  //  i2c address = 0x3c
+
     if(my_client==NULL)
     {
 		printk(KERN_ERR "ERROR: No client created\n");
