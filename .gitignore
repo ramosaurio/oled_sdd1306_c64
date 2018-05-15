@@ -20,3 +20,4 @@ pruebaBuffer.c
 *.backup.c
 *.tmp
 *.swp
+*.swo
