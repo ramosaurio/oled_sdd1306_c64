@@ -7,10 +7,19 @@
 #include <linux/interrupt.h>
 #include <linux/slab.h> 
 #include <linux/miscdevice.h>
+#include <linux/string.h>
+#include <linux/vmalloc.h> 
+#include <linux/proc_fs.h>
+#include <linux/uaccess.h> 
+#include "fonts/myc64_lower.h"
+#include "oled_SSD1306.h"
 
 #define DESCRIPTION "I2C SDD1306 OLED PRINT"
 #define LICENSE "GPL"
 #define DEVICENAME "SDD1306_I2C"
+#define COLSIZE 16
+#define ROWSIZE 8
+#define CHARSIZE 8 
 
 struct oled_device {
 	struct i2c_client *client;
@@ -110,4 +119,16 @@ int SDD1306_i2c_remove(struct i2c_client *client);
 SDD1306* SSD1306_i2c_register(struct device * dev, 
 				struct i2c_client * client);
 int SDD1306_i2c_add_device(SDD1306 * screen);
+
+
+void ssd1306_command(struct i2c_client * my_client, uint8_t value);
+void sdd1306_writedatablock(struct i2c_client * my_client, uint8_t *values, uint8_t length);
+
+void SDD1306_clear_buffer(struct i2c_client *my_client);
+void SDD1306_display(struct i2c_client * my_client,uint16_t ascii);
+void SDD1306_init_config_screen(struct i2c_client * my_client, uint8_t vccstate);
+void write_struct(char letra);
+void SDD1306_zero_init(struct i2c_client *my_client,SDD1306* SDDBUFFER);
+void SDD1306_print(SDD1306*SDDBUFFER);
+int SDD1306_scrollup(void);
 #endif

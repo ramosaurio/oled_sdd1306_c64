@@ -21,3 +21,4 @@ pruebaBuffer.c
 *.tmp
 *.swp
 *.swo
+*.backup.h
