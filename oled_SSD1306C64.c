@@ -1,106 +1,87 @@
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/proc_fs.h>
-#include <linux/slab.h>
-#include <linux/string.h>
-#include <linux/delay.h>
-#include <linux/uaccess.h>
-#include <linux/miscdevice.h> // misc dev
-#include <linux/i2c.h>
-#include <linux/vmalloc.h>
-#include "fonts/myc64_lower.h"
+#include "oled_template.h"
 
-// TEMPLATE
+static SDD1306 *screen_oled;
 
-/****************************************************************************/
-// Globals
-/****************************************************************************/
-#include "oled_SSD1306.h"
-
-/****************************************************************************/
-/* Module init / cleanup block.                                             */
-/****************************************************************************/
-static struct i2c_adapter * my_adap;
-static struct i2c_client * my_client;
-
-
-/****************************************************************************/
-/* Buffer de escritura                                                      */
-/****************************************************************************/
-
-typedef struct _oled  Screen;
-
-struct _oled{
-		
-	char *textBuffer;
-	uint8_t *screenBuffer;
-	int pagina;
-	int columna;	
-
-};
-
- 
-static Screen *screen;
-
-/*****************************************/
-/* static void write_buffer(char letra); */
-/* se encarga de inroducir las letras en 
- * el buffer.
- * Aun hay que implementar cuando el buff
- * er esta lleno                        */
-
-static void write(char letra){
-	int posText,posScreen;
+void write_struct(char letra){
+	int posText,posScreen,scroll_real;
 	uint16_t ascii,i;
+	
+	scroll_real = 0;
 	ascii = (uint16_t) letra;
-	if(screen->pagina == 0){
-		posText = screen->columna;
-		posScreen = screen->columna * 8;	
-	} 
-	else{
-		posText = (((screen->pagina)%8)*16)+screen->columna;
-		posScreen = (((screen->pagina)%8)*128) + (screen->columna*8);
-	
-	} 
-	
+	ascii = ascii*8;
+	if(screen_oled->pagina == 0){
+		posText = screen_oled->columna;
+		posScreen = screen_oled->columna * 8;
 
-	screen->textBuffer[posText] = letra;
-
-	for(i = 0; i<8; i++){
-		screen->screenBuffer[posScreen+i] = font[ascii*8+i];
-	}
-
-	if(screen->columna == 15){
-		screen->columna = 0;
-		screen->pagina++;
 	}else{
-		screen->columna++;
+		posText = (((screen_oled->pagina)%8)*16)+screen_oled->columna;
+		if(screen_oled->pagina <=7) posScreen = (((screen_oled->pagina)*128)+ (screen_oled->columna*8));
+		else posScreen = (7*128)+(screen_oled->columna*8);
 	}
+	screen_oled->textBuffer[posText] = letra;
 
+	for(i = 0; i<8;i++){
+		screen_oled->screenBuffer[ posScreen+i] = font[ascii+i];
+	}
+	if(screen_oled->columna == 15){
+		if(screen_oled->pagina>=7) (scroll_real = SDD1306_scrollup());
+		screen_oled->columna = 0;
+	 	screen_oled->pagina++;	
+	}else{
+		screen_oled->columna++;
+	}
+	if(!scroll_real) SDD1306_display(screen_oled->client,ascii);
 
 }
-/****************************************************************************/
-// write data byte througth i2c client
-/****************************************************************************/
-static void ssd1306_command(struct i2c_client * my_client, uint8_t value)
-{
-    uint8_t command = 0x00;   // Co = 0, D/C = 0
+
+void SDD1306_print(SDD1306*SDDBUFFER){
+	int i;
+	for(i =0 ; i<1024;i++){
+
+			printk(KERN_CONT"%x ",SDDBUFFER->screenBuffer[i]);
+		
+	}
+}
+int SDD1306_scrollup(void){
+	int i;
+	uint8_t *ptrBuffer = screen_oled->screenBuffer+128;
+	struct i2c_client * my_client = screen_oled->client;
+	memcpy(screen_oled->screenBuffer,ptrBuffer,((COLSIZE*ROWSIZE*CHARSIZE)-(COLSIZE*ROWSIZE)));
+	memset(screen_oled->screenBuffer+((COLSIZE*ROWSIZE)*(CHARSIZE-1)),0,(COLSIZE*ROWSIZE));
+	ssd1306_command(my_client, SSD1306_COLUMNADDR);
+    ssd1306_command(my_client, 0);   // Column start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
+
+    ssd1306_command(my_client, SSD1306_PAGEADDR);
+    ssd1306_command(my_client, 0); // Page start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDHEIGHT/8 - 1); // Page end address// SSD1306_SWITCHCAPVCC porque lo vi en ejemplo
+
+	for(i=0;i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8);i+=16){
+		sdd1306_writedatablock(my_client,screen_oled->screenBuffer+i,16);
+	}
+	ssd1306_command(my_client,SSD1306_COLUMNADDR);
+	ssd1306_command(my_client,0);
+    ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
+	ssd1306_command(my_client,SSD1306_PAGEADDR);
+	ssd1306_command(my_client,7);
+	ssd1306_command(my_client,7);
+
+	return 1;
+
+}
+void ssd1306_command(struct i2c_client * my_client, uint8_t value){
+ uint8_t command = 0x00;   // Co = 0, D/C = 0
     i2c_smbus_write_byte_data(my_client, command, value);
+
 }
-/****************************************************************************/
-// write data block througth i2c client
-/****************************************************************************/
-static void ssd1306_writedatablock(struct i2c_client * my_client, uint8_t * values, uint8_t length) // máximo de 16 ?
-{
+
+void sdd1306_writedatablock(struct i2c_client * my_client, uint8_t *values, uint8_t length){
+
     uint8_t command = 0x40;   // Co = 0, D/C = 0
     i2c_smbus_write_i2c_block_data(my_client, command, length, values);
 }
-/***************************************************************************/
-// set frame buffer to zero
-/****************************************************************************/
-static void clear_buffer(void)
-{
+
+void SDD1306_clear_buffer(struct i2c_client *my_client){
 	uint16_t i, clear;
     clear = 32*8;
 	
@@ -115,40 +96,22 @@ static void clear_buffer(void)
 
     for (i=0; i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/4); i+=16)
     {
-        ssd1306_writedatablock(my_client, font+clear,8);
+        sdd1306_writedatablock(my_client, font+clear,8);
     }
 }
-
-/****************************************************************************/
-// set scroll on
-/****************************************************************************/
-static void scroll_izquierda(struct i2c_client * my_client)
-{
-	// consultar datasheet para ver parámetros del comando
-	ssd1306_command(my_client,SSD1306_LEFT_HORIZONTAL_SCROLL);
-    ssd1306_command(my_client,0x00); // dummy
-    ssd1306_command(my_client,0x00); // inicio
-    ssd1306_command(my_client,0x06); // velocidad
-    ssd1306_command(my_client,0x07); // fin
-    ssd1306_command(my_client,0x00); // dummy
-    ssd1306_command(my_client,0xFF); // dummy    
-    ssd1306_command(my_client,SSD1306_ACTIVATE_SCROLL);
+void SDD1306_display(struct i2c_client *my_client,uint16_t ascii){
+	sdd1306_writedatablock(my_client,font+ascii,8);
 }
 
-/****************************************************************************/
-// write frame buffer to display
-/****************************************************************************/
-static void display(struct i2c_client * my_client,uint16_t ascii)
-{
-   	ssd1306_writedatablock(my_client,font+ascii,8);  
+void SDD1306_zero_init(struct i2c_client *my_client,SDD1306 *SDDBUFFER){
+	int i;
+	memset(SDDBUFFER->screenBuffer,0,128);
+	for(i=0;i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8);i+=16){
+		sdd1306_writedatablock(my_client,SDDBUFFER->screenBuffer+i,16);
+	}
 }
-
-/****************************************************************************/
-// display initialization
-/****************************************************************************/
-static void init_sequence(struct i2c_client * my_client, uint8_t vccstate) // vccstate ?
-{
-    // Init sequence
+void SDD1306_init_config_screen(struct i2c_client * my_client, uint8_t vccstate){
+ // Init sequence
     ssd1306_command(my_client, SSD1306_DISPLAYOFF);                    // 0xAE
     ssd1306_command(my_client, SSD1306_SETDISPLAYCLOCKDIV);            // 0xD5
     ssd1306_command(my_client, 0x80);                                  // the suggested ratio 0x80
@@ -211,131 +174,178 @@ static void init_sequence(struct i2c_client * my_client, uint8_t vccstate) // vc
     ssd1306_command(my_client, SSD1306_PAGEADDR);
     ssd1306_command(my_client, 0); // Page start address (0 = reset)
     ssd1306_command(my_client, SSD1306_LCDHEIGHT/8 - 1); // Page end address// SSD1306_SWITCHCAPVCC porque lo vi en ejemplo
-} 
-
-
-
-static ssize_t sdd1306_write(struct file *file, const char __user *buf,
-                          size_t count, loff_t *ppos)
-{
-	char letra;
-
-	uint16_t ascichar;
-
-    if (copy_from_user( &letra, buf, 1 )) {
-        return -EFAULT;
-    }
-	
-	write(letra);
-	
-  //  printk(KERN_INFO " BUFFER-> )%s",buffer->charBuffer);
-//	printk(KERN_INFO "C: %d\tP: %d\n",buffer->columna,buffer->pagina);
- //   printk(KERN_INFO " uinst16_6 %d\n",(uint16_t)letra);	
-	ascichar = (uint16_t)letra;
-	ascichar = ascichar*8;
-	display(my_client,ascichar);
-	
-	return 1;
-}
-
-
-static const struct file_operations sdd1306_fops = {
-	.owner	= THIS_MODULE,
-	.write	= sdd1306_write,
-};
-/****************************************************************************/
-/* device struct                                                            */
-/****************************************************************************/
-static struct miscdevice sdd1306_miscdev = {
-    .minor	= MISC_DYNAMIC_MINOR,
-    .name	= "write_oled",
-    .fops   = &sdd1306_fops,
-};
-
-
-static int r_dev_config_sdd1306(void){
-	int ret=0;
-	ret = misc_register(&sdd1306_miscdev);
-	if(ret < 0){
-	    printk(KERN_ERR "misc_register failed\n");
-			
-	}else{
-		printk(KERN_NOTICE"misc_register OK... b_miscdev.minor=%d\n",ret);
-	}
-	
-	return ret;
-}
-void r_cleanup(void)
-{
-	printk(KERN_NOTICE "%s module cleaning up...\n", KBUILD_MODNAME);
-    if (sdd1306_miscdev.this_device) misc_deregister(&sdd1306_miscdev);
-	vfree(screen->screenBuffer);
-	vfree(screen->textBuffer);
-	vfree(screen);
-    printk(KERN_NOTICE "Unregistering i2c client\n");
-    printk(KERN_NOTICE "Clearing buffer...\n");
-    clear_buffer();
-    printk(KERN_NOTICE "Write buffer to display...\n");
-    ssd1306_command(my_client,SSD1306_DEACTIVATE_SCROLL);
- 
-    i2c_unregister_device(my_client);
-
-	printk(KERN_NOTICE "Done. Bye from %s module\n", KBUILD_MODNAME);
-    return;
 
 }
+SDD1306 *SDD1306_i2c_register(struct device *dev,
+				struct i2c_client * client){
 
-int r_init(void)
-{
-	int res = 0;
-	printk(KERN_NOTICE "Hello, loading %s module\n",KBUILD_MODNAME);
-    printk(KERN_NOTICE "%s - devices config...\n", KBUILD_MODNAME);
-        if((res = r_dev_config_sdd1306()))
-    {
-		r_cleanup();
-		return res;
-	}
- 	printk(KERN_NOTICE "%s - Buffer config ... \n",KBUILD_MODNAME);
-	screen = (Screen* )vmalloc(sizeof(Screen));
-	screen->textBuffer = (char*)vmalloc(sizeof(char)*128);
-	screen->screenBuffer = (uint8_t*)vmalloc(sizeof(uint8_t)*1024);
-	screen->pagina = 0;
+	SDD1306 * screen;
+	int ret;
+	printk(KERN_INFO "Registrando i2c_struct\n");
+	if((screen = kzalloc(sizeof(SDD1306),GFP_KERNEL))==NULL)
+		goto free_driver_NULL;
+	if((screen->textBuffer = kzalloc(sizeof(char)*128,GFP_KERNEL))==NULL)
+		goto free_driver_NULL;
+	if((screen->screenBuffer = kzalloc(sizeof(char)*1024,GFP_KERNEL))==NULL)
+		goto free_driver_NULL;
+	
 	screen->columna = 0;
+	screen->pagina = 0;
 	
+	screen->dev = get_device(dev);
 	
-	memset((screen->textBuffer),'\0',sizeof(char)*128);
-	memset((screen->screenBuffer),0,(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8));
-    
-	printk(KERN_NOTICE "Connecting to adapter i2c-1\n");
-   // 1 means i2c-1 bus
-    if(my_adap==NULL)
-    {
-		printk(KERN_ERR "ERROR: No i2c adapter found\n");
-		return -ENODEV;
-	}
-    printk(KERN_NOTICE "Creating new i2c client at 0x3c address\n");
 
-    if(my_client==NULL)
-    {
-		printk(KERN_ERR "ERROR: No client created\n");
-		return -ENODEV;
-	}
-    printk(KERN_NOTICE "Display initialization\n");
-    init_sequence(my_client, SSD1306_SWITCHCAPVCC); 
-  
-	printk(KERN_NOTICE "%s - Fin de la configuracion inicial\n",KBUILD_MODNAME);
-	return res;
+	/*
+	 * static inline void dev_set_drvdata(struct device *dev, void      * data){
+	 *	dev->driver_data = data;
+	 * }
+	 *
+	 * Con esta funcion referenciamos nuestra estructura dentro
+	 * de la estructura del device. Para que esté todo bien documentado en el device tree.
+	 *
+	 */
+	dev_set_drvdata(dev,screen);
+	screen->client = client;
+	i2c_set_clientdata(client,screen);
+
 	
+	if((ret=SDD1306_i2c_add_device(screen))<0)
+		goto free_driver;
+	printk(KERN_NOTICE "i2c_struct_SDD1306 COMPLETED\n");
+	return screen;
+free_driver_NULL:
+	printk(KERN_ERR "Error al reservar memoria en el device\n");
+	return NULL;
+
+free_driver:
+	printk(KERN_ERR "Error al crear miscdev\n");
+
+	/*
+	 * void put_device(struct device *dev){
+	 *		if(dev)
+	 *			kobject_put(&dev_kobj);
+	 *
+	 * }
+	 * 
+	 * void kobject_put(struct kobject *kobj);
+	 *
+	 * Si KRef del Kobj llega a 0, lanza la funcion
+	 * release() asociada a dicho kobject. 
+	 *
+	put_device(dev);	
+*/
+	put_device(screen->dev);
+	vfree(screen->textBuffer);
+	vfree(screen->screenBuffer);
+	vfree(screen);
+	return NULL;
+}
+int SDD1306_i2c_probe(struct i2c_client * client,
+					const struct i2c_device_id *id){
+	SDD1306 *screen;
+	struct device * dev = &client->dev;
+
+	if(!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)){
+		        printk(KERN_ERR "%s: needed i2c functionality is not supported\n", __func__);
+        return -ENODEV;	
+	}else{
+		printk(KERN_INFO "%s: i2c functionality supported\n", __func__);
+	}
+	
+	if((screen = SDD1306_i2c_register(dev,client))==NULL){
+		printk(KERN_ERR "Error creando la estructura i2c\n");	
+	}else{
+		screen_oled = screen;
+	}
+	printk(KERN_NOTICE "Display initialization\n");
+	SDD1306_init_config_screen(screen->client,SSD1306_SWITCHCAPVCC);
+	SDD1306_zero_init(screen->client,screen);
+
+	return 0;
 }
 
+int SDD1306_i2c_remove(struct i2c_client *client){
+	struct device *dev = &(client->dev);
+	SDD1306 * screen = dev_get_drvdata(dev);
+	SDD1306_clear_buffer(client);
+		misc_deregister(&screen->miscdev);
+	 	
 
-module_init(r_init);
-module_exit(r_cleanup);
+		vfree(screen->textBuffer);
+		vfree(screen->screenBuffer);	
 
-/****************************************************************************/
-/* Module licensing/description block.                                      */
-/****************************************************************************/
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("DAC");
-MODULE_DESCRIPTION("Simple module for oled SDD1306 128x64 i2c initialization");
+	put_device(dev);
+	printk(KERN_NOTICE"PASO5\n");
+	vfree(screen);
+	printk(KERN_NOTICE"PASO6\n");
+
+	screen_oled = NULL;
+
+	return 0;
+
+
+
+}
+ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t count, loff_t *f_pos){
+		// Prueba de funcionamiento 
+	char letra;
+	if(copy_from_user(&letra,buf,1)){
+			return -EFAULT;
+	}
+
+	printk(KERN_NOTICE "Valor de letra: %c\n",letra);
+	write_struct(letra);
+	return 1;
+
+}
+static const struct file_operations SDD1306_fops = {
+	.owner = THIS_MODULE,
+	.write = SDD1306_i2c_write,
+};
+
+int SDD1306_i2c_add_device(SDD1306 * screen){
+	int ret = 0;
+	printk(KERN_INFO "Entra en i2c-add\n");
+	screen->miscdev.minor = MISC_DYNAMIC_MINOR;
+	screen->miscdev.name = "write_oled";
+	screen->miscdev.fops = &SDD1306_fops;
+	screen->miscdev.parent = screen->dev;
+	ret = misc_register(&screen->miscdev);
+	if(ret<0) 
+		printk(KERN_ERR "misc_register failed\n");
+	else 
+		printk(KERN_NOTICE "misc_register OK.. minor=%d\n",ret);
+
+	return ret;
+
+}
+static const struct i2c_device_id SDD1306_i2c_id[]={
+	{"SDD1306_i2c",0},
+	{ }
+};
+
+MODULE_DEVICE_TABLE(i2c, SDD1306_i2c_id);
+
+static struct i2c_driver SDD1306_i2c_driver = {
+	.probe	= SDD1306_i2c_probe,
+   	.remove = SDD1306_i2c_remove,
+	.id_table=SDD1306_i2c_id,
+	.driver = {
+		.owner	 = THIS_MODULE,
+		.name	 = "SDD1306_i2c" 	
+	},	
+};
+static int i2c_driver_init(void){
+    return i2c_add_driver(&SDD1306_i2c_driver);
+}
+
+static void __exit i2c_driver_exit(void){
+    i2c_del_driver(&SDD1306_i2c_driver);
+    printk(KERN_INFO "%s: i2c client driver deleted\n", __func__);
+}
+module_init(i2c_driver_init);
+module_exit(i2c_driver_exit);
+
+MODULE_DESCRIPTION(DESCRIPTION);
+MODULE_LICENSE(LICENSE);
