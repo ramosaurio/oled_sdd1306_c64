@@ -49,11 +49,14 @@ static Screen *screen;
  * el buffer.
  * Aun hay que implementar cuando el buff
  * er esta lleno                        */
+ 
+int scroll_Up(void);
+ 
 
 static void write(char letra){
 	int posText,posScreen;
 	uint16_t ascii,i;
-	ascii = (uint16_t) letra;
+	ascii = (uint16_t) letra;	
 	if(screen->pagina == 0){
 		posText = screen->columna;
 		posScreen = screen->columna * 8;	
@@ -76,8 +79,12 @@ static void write(char letra){
 		screen->pagina++;
 	}else{
 		screen->columna++;
-	}
-
+}
+	if(screen->pagina==8){
+			scroll_Up();
+			screen->columna = 0;
+		    screen->pagina=7;
+		}
 
 }
 /****************************************************************************/
@@ -135,12 +142,45 @@ static void scroll_izquierda(struct i2c_client * my_client)
     ssd1306_command(my_client,SSD1306_ACTIVATE_SCROLL);
 }
 
+
+
+
 /****************************************************************************/
 // write frame buffer to display
 /****************************************************************************/
 static void display(struct i2c_client * my_client,uint16_t ascii)
 {
    	ssd1306_writedatablock(my_client,font+ascii,8);  
+}
+
+int scroll_Up(void){
+	//copiar cada linea en la anterior pagina-1 = pag ---- ultimapag= nueva pag//
+	
+    uint16_t i;
+    memcpy(screen->screenBuffer, (screen->screenBuffer)+128, 128*7);
+    // Usamos los contadores para indicar desde donde hasta donde vamos a escribir...
+    ssd1306_command(my_client, SSD1306_COLUMNADDR);
+    ssd1306_command(my_client, 0);   // Column start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
+
+    ssd1306_command(my_client, SSD1306_PAGEADDR);
+    ssd1306_command(my_client, 0); // Page start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDHEIGHT/8 - 1); // Page end address
+
+	memset(screen->screenBuffer+(128*7), 0 , 128);
+	
+    // I2C
+    for (i=0; i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8); i+=16)
+    {
+        ssd1306_writedatablock(my_client, screen->screenBuffer+i, 16);
+    }
+    ssd1306_command(my_client, SSD1306_PAGEADDR);
+    ssd1306_command(my_client,7); // Page start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDHEIGHT/8 - 1); // Page end address
+
+	
+	
+	return 0;
 }
 
 /****************************************************************************/
@@ -250,6 +290,7 @@ static struct miscdevice sdd1306_miscdev = {
     .minor	= MISC_DYNAMIC_MINOR,
     .name	= "write_oled",
     .fops   = &sdd1306_fops,
+    .mode 	= S_IWOTH | S_IWGRP | S_IWUSR
 };
 
 
