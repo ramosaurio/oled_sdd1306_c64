@@ -131,4 +131,6 @@ void write_struct(char letra);
 void SDD1306_zero_init(struct i2c_client *my_client,SDD1306* SDDBUFFER);
 void SDD1306_print(SDD1306*SDDBUFFER);
 int SDD1306_scrollup(void);
+void ioctl_clean_command(void);
+void SDD1306_cambiar_ptr(int pagina,int columna);
 #endif

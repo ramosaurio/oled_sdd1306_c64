@@ -1,5 +1,5 @@
 #include "oled_template.h"
-
+#include "oled_ioctl.h"
 static SDD1306 *screen_oled;
 
 void write_struct(char letra){
@@ -23,25 +23,55 @@ void write_struct(char letra){
 	for(i = 0; i<8;i++){
 		screen_oled->screenBuffer[ posScreen+i] = font[ascii+i];
 	}
-	if(screen_oled->columna == 15){
-		if(screen_oled->pagina>=7) (scroll_real = SDD1306_scrollup());
+	if(((int)letra)==10){
+   		if((screen_oled->pagina>=7)){
+		//scroll_real = SDD1306_scrollup();
+		scroll_real = SDD1306_scrollup();
 		screen_oled->columna = 0;
-	 	screen_oled->pagina++;	
+		screen_oled->pagina +=2;
+		}else{
+			screen_oled->columna= 0;
+			screen_oled->pagina++;
+		}
+	 SDD1306_cambiar_ptr(((screen_oled->pagina)%8),screen_oled->columna);
+	
 	}else{
-		screen_oled->columna++;
+		if(screen_oled->columna == 15){
+			if(screen_oled->pagina>=7) (scroll_real = SDD1306_scrollup());
+				screen_oled->columna = 0;
+	 			screen_oled->pagina++;	
+		}else{
+			screen_oled->columna++;
+		}
+		if(!scroll_real){			
+			SDD1306_display(screen_oled->client,ascii);	
+	
+		}
 	}
-	if(!scroll_real) SDD1306_display(screen_oled->client,ascii);
+
+}
+void SDD1306_cambiar_ptr(int pagina, int columna){
+	struct i2c_client * my_client = screen_oled->client;	
+	
+	pagina = screen_oled->pagina;
+	columna = screen_oled->columna;
+	ssd1306_command(my_client,SSD1306_COLUMNADDR);
+	ssd1306_command(my_client,columna);
+    ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
+	ssd1306_command(my_client,SSD1306_PAGEADDR);
+	ssd1306_command(my_client,pagina);
+	ssd1306_command(my_client,7);
+
 
 }
 
 void SDD1306_print(SDD1306*SDDBUFFER){
 	int i;
 	for(i =0 ; i<1024;i++){
-
-			printk(KERN_CONT"%x ",SDDBUFFER->screenBuffer[i]);
-		
+			printk(KERN_CONT"%x ",SDDBUFFER->screenBuffer[i]);		
 	}
 }
+
 int SDD1306_scrollup(void){
 	int i;
 	uint8_t *ptrBuffer = screen_oled->screenBuffer+128;
@@ -287,6 +317,45 @@ int SDD1306_i2c_remove(struct i2c_client *client){
 
 
 }
+void ioctl_clean_command(void){
+	int i;
+	struct i2c_client * my_client = screen_oled->client;
+	memset(screen_oled->screenBuffer,0,1024);
+	ssd1306_command(my_client, SSD1306_COLUMNADDR);
+    ssd1306_command(my_client, 0);   // Column start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
+
+    ssd1306_command(my_client, SSD1306_PAGEADDR);
+    ssd1306_command(my_client, 0); // Page start address (0 = reset)
+    ssd1306_command(my_client, SSD1306_LCDHEIGHT/8 - 1); // Page end address// SSD1306_SWITCHCAPVCC porque lo vi en ejemplo
+
+	for(i=0;i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8);i+=16){
+		sdd1306_writedatablock(my_client,screen_oled->screenBuffer+i,16);
+	}
+
+	screen_oled->columna=0;
+	screen_oled->pagina=0;
+
+
+
+}
+
+static long clean_all_ioctl(struct file *filep, unsigned int cmd, unsigned long arg){
+
+	switch(cmd){
+	
+		case IO_CLEAN:
+			ioctl_clean_command();
+		break;
+		default:
+		return -EINVAL;
+	
+	}
+
+	return 0;
+
+
+}
 ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t count, loff_t *f_pos){
 		// Prueba de funcionamiento 
 	char letra;
@@ -294,7 +363,7 @@ ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t cou
 			return -EFAULT;
 	}
 
-	printk(KERN_NOTICE "Valor de letra: %c\n",letra);
+	printk(KERN_NOTICE "Valor de letra: %c decimal: %d\n",letra,letra);
 	write_struct(letra);
 	return 1;
 
@@ -302,6 +371,7 @@ ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t cou
 static const struct file_operations SDD1306_fops = {
 	.owner = THIS_MODULE,
 	.write = SDD1306_i2c_write,
+	.unlocked_ioctl = clean_all_ioctl			
 };
 
 int SDD1306_i2c_add_device(SDD1306 * screen){
@@ -311,6 +381,9 @@ int SDD1306_i2c_add_device(SDD1306 * screen){
 	screen->miscdev.name = "write_oled";
 	screen->miscdev.fops = &SDD1306_fops;
 	screen->miscdev.parent = screen->dev;
+	screen->miscdev.mode=S_IRUGO;
+	
+	
 	ret = misc_register(&screen->miscdev);
 	if(ret<0) 
 		printk(KERN_ERR "misc_register failed\n");
