@@ -25,27 +25,27 @@ void write_struct(char letra){
 	}
 	if(((int)letra)==10){
    		if((screen_oled->pagina>=7)){
-		//scroll_real = SDD1306_scrollup();
-		scroll_real = SDD1306_scrollup();
-		screen_oled->columna = 0;
-		screen_oled->pagina +=2;
+			scroll_real = SDD1306_scrollup();
+			screen_oled->columna = 0;
+			screen_oled->pagina ++;
+
 		}else{
 			screen_oled->columna= 0;
 			screen_oled->pagina++;
+			SDD1306_cambiar_ptr(screen_oled->pagina,screen_oled->columna);
 		}
-	 SDD1306_cambiar_ptr(((screen_oled->pagina)%8),screen_oled->columna);
-	
+
 	}else{
 		if(screen_oled->columna == 15){
 			if(screen_oled->pagina>=7) (scroll_real = SDD1306_scrollup());
-				screen_oled->columna = 0;
-	 			screen_oled->pagina++;	
+			screen_oled->columna = 0;
+	 		screen_oled->pagina++;	
 		}else{
 			screen_oled->columna++;
 		}
+		
 		if(!scroll_real){			
 			SDD1306_display(screen_oled->client,ascii);	
-	
 		}
 	}
 
@@ -61,8 +61,6 @@ void SDD1306_cambiar_ptr(int pagina, int columna){
 	ssd1306_command(my_client,SSD1306_PAGEADDR);
 	ssd1306_command(my_client,pagina);
 	ssd1306_command(my_client,7);
-
-
 }
 
 void SDD1306_print(SDD1306*SDDBUFFER){
@@ -243,6 +241,7 @@ SDD1306 *SDD1306_i2c_register(struct device *dev,
 		goto free_driver;
 	printk(KERN_NOTICE "i2c_struct_SDD1306 COMPLETED\n");
 	return screen;
+	
 free_driver_NULL:
 	printk(KERN_ERR "Error al reservar memoria en el device\n");
 	return NULL;
@@ -262,8 +261,7 @@ free_driver:
 	 * Si KRef del Kobj llega a 0, lanza la funcion
 	 * release() asociada a dicho kobject. 
 	 *
-	put_device(dev);	
-*/
+	put_device(dev);*/
 	put_device(screen->dev);
 	vfree(screen->textBuffer);
 	vfree(screen->screenBuffer);
@@ -371,7 +369,8 @@ ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t cou
 static const struct file_operations SDD1306_fops = {
 	.owner = THIS_MODULE,
 	.write = SDD1306_i2c_write,
-	.unlocked_ioctl = clean_all_ioctl			
+	.unlocked_ioctl = clean_all_ioctl,
+	//.mode = S_IWOTH | S_IWGRP | S_IWUSR
 };
 
 int SDD1306_i2c_add_device(SDD1306 * screen){
@@ -381,7 +380,7 @@ int SDD1306_i2c_add_device(SDD1306 * screen){
 	screen->miscdev.name = "write_oled";
 	screen->miscdev.fops = &SDD1306_fops;
 	screen->miscdev.parent = screen->dev;
-	screen->miscdev.mode=S_IRUGO;
+	screen->miscdev.mode=S_IWOTH | S_IWGRP | S_IWUSR;
 	
 	
 	ret = misc_register(&screen->miscdev);
