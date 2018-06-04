@@ -11,6 +11,13 @@
 #include <linux/vmalloc.h> 
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h> 
+#include <linux/printk.h>
+#include <linux/list.h> 
+#include <linux/delay.h> 
+#include <linux/gpio.h>
+#include <linux/sched.h> 
+#include <linux/fs.h>
+#include <linux/timer.h>
 #include "fonts/myc64_lower.h"
 #include "oled_SSD1306.h"
 
@@ -21,10 +28,30 @@
 #define ROWSIZE 8
 #define CHARSIZE 8 
 
+#define GPIO_BUTTON_UP 10
+#define GPIO_BUTTON_DOWN 17
+#define GPIO_BUTTON_LEFT 22
+#define GPIO_BUTTON_RIGHT 23
+
+#define GPIO_BUTTON_UP_DESC "Cursor arriba"
+#define GPIO_BUTTON_DOWN_DESC "Cursor abajo"
+#define GPIO_BUTTON_LEFT_DESC "Cursor izquierda"
+#define GPIO_BUTTON_RIGHT_DESC "Cursor derecha"
+
+#define GPIO_BUTTON_DEVICE_DESC "CURSOR"
+
+struct _cursor_oled {
+	int pagina;
+	int columna;
+
+};
+
+typedef struct _cursor_oled cursor_oled;
+
 struct oled_device {
 	struct i2c_client *client;
 	struct device *dev;
-
+	cursor_oled * cursor;
 	char *textBuffer;
 	uint8_t *screenBuffer;
 
@@ -35,6 +62,7 @@ struct oled_device {
 };
 
 typedef struct oled_device SDD1306;
+
 /* I2C Detection */ 
 
 int SDD1306_i2c_probe(struct i2c_client * client, 
