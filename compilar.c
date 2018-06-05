@@ -6,22 +6,15 @@ static short int irq_BUTTON_DOWN = 0;
 static short int irq_BUTTON_LEFT = 0; 
 static short int irq_BUTTON_RIGHT = 0; 
 static short int blink = 0;
-//static void tasklet_handler_up(unsigned long);
-//static void tasklet_handler_down(unsigned long);
-//static void tasklet_handler_left(unsigned long);
-//static void tasklet_handler_right(unsigned long);
 
-//DECLARE_TASKLET(tasklet_boton_up,tasklet_handler_up,1);
-//DECLARE_TASKLET(tasklet_boton_down,tasklet_handler_down,2);
-//DECLARE_TASKLET(tasklet_boton_left,tasklet_handler_left,3);
-//DECLARE_TASKLET(tasklet_boton_right,tasklet_handler_right,4);
 static uint8_t charblink[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-static uint8_t charblink2[ 8]= {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+
 static void work_handler_up(struct work_struct *work);
 static void work_handler_down(struct work_struct *work);
 static void work_handler_left(struct work_struct *work);
 static void work_handler_right(struct work_struct *work);
 static void work_handler_blink(struct work_struct *work);
+
 DECLARE_WORK(work_up,work_handler_up);
 DECLARE_WORK(work_down,work_handler_down);
 DECLARE_WORK(work_left,work_handler_left);
@@ -38,9 +31,9 @@ DEFINE_SEMAPHORE(semaforo);
 static void work_handler_blink(struct work_struct *work){
 		uint8_t command,valor;
 		int i,bufferPos,colPos,pagPos;
-		
+	 	
 		command = 0x40;
-		
+		if(down_interruptible(&semaforo))printk(KERN_ERR "BLINK DOWN_INTERRUPTIBLE ERR\n"); 	
 		if(blink == 0){
  			for(i=0; i<8; i++){
 				i2c_smbus_write_byte_data(screen_oled->client,command,charblink[i]);
@@ -70,10 +63,11 @@ static void printcursor(void){
 	printk(KERN_NOTICE "CURSOR X: %d\n",screen_oled->cursor->pagina);
 	printk(KERN_NOTICE "CURSOR Y: %d\n",screen_oled->cursor->columna);
 }
-static void save_actual_pos(void){
-	int i,bufferPos,pagPos,colPos;
+static int save_actual_pos(void){
+	int i,bufferPos,pagPos,colPos,res;
 	uint8_t command,valor;
 	command = 0x40;
+	res = 0;
 	pagPos = screen_oled->cursor->pagina*PAGLENGTH;
 	colPos = screen_oled->cursor->columna*CHARSIZE;
 	if(down_interruptible(&semaforo))return -ERESTARTSYS;
@@ -83,11 +77,13 @@ static void save_actual_pos(void){
 		i2c_smbus_write_byte_data(screen_oled->client,command,valor);
 	}
 	up(&semaforo);
+	return res;
 }
 static void work_handler_up(struct work_struct *work){
 	printk(KERN_INFO "BOTON_UP\n");
 	if(screen_oled->cursor->pagina>0){
-		save_actual_pos();
+		
+		if(save_actual_pos()) printk(KERN_ERR"ERROR DOWN_INTERRUPTIBLE\n");
 		screen_oled->pagina--;
 		screen_oled->cursor->pagina--;
 		SDD1306_cambiar_ptr((screen_oled->cursor->pagina), screen_oled->cursor->columna);
@@ -97,8 +93,8 @@ static void work_handler_up(struct work_struct *work){
 }
 static void work_handler_down(struct work_struct *work){
 	printk(KERN_INFO "BOTON DOWN\n");
-	if((screen_oled->cursor->pagina)!=7){
-		save_actual_pos();
+	if((screen_oled->cursor->pagina)!=7){		
+		if(save_actual_pos()) printk(KERN_ERR"ERROR DOWN_INTERRUPTIBLE\n");
 		screen_oled->pagina++;
 		screen_oled->cursor->pagina++;
 	 	SDD1306_cambiar_ptr((screen_oled->cursor->pagina),screen_oled->cursor->columna);	
@@ -110,7 +106,8 @@ static void work_handler_left(struct work_struct *work){
 	printk(KERN_INFO "BOTON LEFT\n");
 
 	if(screen_oled->cursor->columna>0){
-		save_actual_pos();
+		if(save_actual_pos()) printk(KERN_ERR"ERROR DOWN_INTERRUPTIBLE\n");
+
 		screen_oled->columna--;
 		screen_oled->cursor->columna--;
 	 	SDD1306_cambiar_ptr((screen_oled->cursor->pagina),screen_oled->cursor->columna);
@@ -122,7 +119,8 @@ static void work_handler_right(struct work_struct *work){
 	printk(KERN_INFO "BOTON_RIGHT\n");
 
 	if(screen_oled->cursor->columna<15){
-		save_actual_pos();
+		if(save_actual_pos()) printk(KERN_ERR"ERROR DOWN_INTERRUPTIBLE\n");
+
 		screen_oled->columna++;
 		screen_oled->cursor->columna++;
 	 	SDD1306_cambiar_ptr((screen_oled->cursor->pagina),screen_oled->cursor->columna);	
@@ -270,106 +268,73 @@ static int r_int_config(void)
 }
 
 void desplazar(uint8_t *letra,int cuenta){
-	
-	int actualPos = screen_oled->cursor->pagina*128 + screen_oled->cursor->pagina*64 ;
 	uint8_t aux[8];
-	int i,realscroll,j;
-	int col,pag;
-    j=0;
-	realscroll = 0;
-	printk(KERN_NOTICE "CUENTA %d\n",cuenta);
-	printk(KERN_NOTICE "CUENT /128 : %d\t /64 : %d\n",(cuenta/128),((cuenta/8)%16));
-	printk(KERN_NOTICE "D X: %d , Y: %d\n",screen_oled->cursor->pagina,screen_oled->cursor->columna);
-	if(cuenta<=screen_oled->lastWrite+8){
-		printk(KERN_NOTICE"ENTRA1\n");
-		for(i=0; i<8;i++){
-			aux[i]=screen_oled->screenBuffer[cuenta+i];
-			screen_oled->screenBuffer[cuenta+i]= letra[j];
-			j++;
-		}
+	int realscroll,vPag,vCol;
 	
-//		SDD1306_display(screen_oled->client,ascii);	
-		printk(KERN_NOTICE "CUENTAENTRA %d\n",cuenta);
-//		sdd1306_writedatablock(screen_oled->client,screen_oled->screenBuffer+cuenta,8);
+	realscroll = 0;
+	vPag = cuenta/PAGLENGTH;
+	vCol = (cuenta/CHARSIZE)%COLSIZE;
 
-		printk(KERN_NOTICE"DATOS ENVIAOS\n");
-//		cuenta = cuenta +8;
-		if(((cuenta/128)==7) &&(((cuenta/8)%16)==15)){
+	if(cuenta<=screen_oled->lastWrite+8){
+		memcpy(aux,screen_oled->screenBuffer+cuenta,8);
+		memcpy(screen_oled->screenBuffer+cuenta,letra,8);
+
+		if((vPag==7) &&(vCol==15)){
 			SDD1306_scrollup();   
-			printk("SCROLL PAG: %d, COL: %d\n",(cuenta/128),((cuenta/8)%16));
-				cuenta = cuenta - 128;
-				screen_oled->lastWrite = screen_oled->lastWrite - 128 ;
-
-				screen_oled->cursor->pagina = 6;
-		}else{
-		printk("LAST WRITE NO SCROLL: %d\n",screen_oled->lastWrite);
-		printk("CUENTA NO SCROLL: %d\n",cuenta);
-		printk("NO SCROLL PAG: %d, COL: %d\n",(cuenta/128),((cuenta/8)%16));
-			
-		SDD1306_cambiar_ptr((cuenta/128),((cuenta/8)%16)); 	
-				sdd1306_writedatablock(screen_oled->client,screen_oled->screenBuffer+cuenta,8);
+			cuenta = cuenta - PAGLENGTH;
+			screen_oled->lastWrite = screen_oled->lastWrite - PAGLENGTH ;
+			screen_oled->cursor->pagina = 6;
+		}else{	
+			SDD1306_cambiar_ptr(vPag,vCol); 	
+			sdd1306_writedatablock(screen_oled->client,screen_oled->screenBuffer+cuenta,8);
 		}
-
 
 		cuenta = cuenta + 8;
 		desplazar(aux,cuenta);		
-		printk(KERN_NOTICE "FINISH\n");
+
 	}else{
-		printk(KERN_NOTICE"ENTRA2\n");
+
 		if(screen_oled->cursor->columna==15){
-				printk(KERN_NOTICE "COL 15");
-		
 			if(screen_oled->cursor->pagina==7){ 
 				realscroll =SDD1306_scrollup();
 			}else{
 				screen_oled->lastWrite = screen_oled->lastWrite + 8;
-
 				screen_oled->cursor->pagina++;
 			}   
 			screen_oled->cursor->columna=0;
 		}else{
 			screen_oled->cursor->columna++;
-	screen_oled->lastWrite = screen_oled->lastWrite + 8;
+			screen_oled->lastWrite = screen_oled->lastWrite + 8;
 
 		}
-		if(!realscroll){
-			printk(KERN_NOTICE "CAMBIA PTR DESPL\n");
-			printk(KERN_NOTICE "DESPLZ X: %d, Y: %d\n",screen_oled->cursor->pagina,screen_oled->cursor->columna);
- 
-	SDD1306_cambiar_ptr(screen_oled->cursor->pagina,screen_oled->cursor->columna); 
-				}
 
+		if(!realscroll){
+		
+			SDD1306_cambiar_ptr(screen_oled->cursor->pagina,screen_oled->cursor->columna); 
+			printcursor();
+		}
 	}
 }
 void write_struct(char letra){
-	down_interruptible(&semaforo);
 	int posText,posScreen,scroll_real;
 	uint16_t ascii,i;
 	uint8_t letradesplazar[8];
-	int kd;
-	
+
+	if(down_interruptible(&semaforo)) printk(KERN_ERR "ERROR DOWN_INTERRUPTIBLE WRITE\n"); 	
 	scroll_real = 0;
 	ascii = (uint16_t) letra;
 	ascii = ascii*8;
+
 	posText = screen_oled->cursor->pagina + screen_oled->cursor->columna;
 	posScreen = (screen_oled->cursor->pagina*128)+(screen_oled->cursor->columna*8);
 
-//	screen_oled->textBuffer[ posText] = letra;
-
 
 	screen_oled->textBuffer[posText] = letra;
-	printk(KERN_INFO "LASTWRITE: %d\n",screen_oled->lastWrite);
-	printk(KERN_INFO "ACTUALPOS: %d\n",posText);
-	if(screen_oled->lastWrite != 0 && posScreen <= screen_oled->lastWrite){
-		printk(KERN_NOTICE "DESPLAZAR\n");	
-			for(kd=0; kd<8;kd++){
-			letradesplazar[kd]=font[ ascii+kd];
-		}
-		printk(KERN_NOTICE "PTR X: %d, Y: %d\n",screen_oled->cursor->pagina,screen_oled->cursor->columna);
-		printk(KERN_NOTICE "ARRAY GUARDADO\n");
+	if(screen_oled->lastWrite != 0 && posScreen <= screen_oled->lastWrite){	
+		memcpy(letradesplazar,(font+ascii),8);
 		desplazar(letradesplazar,posScreen);
 	}else{
-		printk(KERN_NOTICE"PORFAVOR NO ENTRES\n");
+
 		for(i = 0; i<8;i++){
 			screen_oled->screenBuffer[ posScreen+i] = font[ascii+i];
 		}
@@ -429,7 +394,7 @@ int SDD1306_scrollup(void){
 	int i;
 	uint8_t *ptrBuffer = screen_oled->screenBuffer+128;
 	struct i2c_client * my_client = screen_oled->client;
-//	del_timer(&blink_timer);
+
 	memcpy(screen_oled->screenBuffer,ptrBuffer,((COLSIZE*ROWSIZE*CHARSIZE)-(COLSIZE*ROWSIZE)));
 	memset(screen_oled->screenBuffer+((COLSIZE*ROWSIZE)*(CHARSIZE-1)),0,(COLSIZE*ROWSIZE));
 	ssd1306_command(my_client, SSD1306_COLUMNADDR);
@@ -443,9 +408,7 @@ int SDD1306_scrollup(void){
 	for(i=0;i<(SSD1306_LCDWIDTH*SSD1306_LCDHEIGHT/8);i+=16){
 		sdd1306_writedatablock(my_client,screen_oled->screenBuffer+i,16);
 	}
-	//screen_oled->cursor->pagina=7;
-	//screen_oled->cursor->columna=0;
-	//screen_oled->lastWrite = 0;
+
 	ssd1306_command(my_client,SSD1306_COLUMNADDR);
 	ssd1306_command(my_client,0);
     ssd1306_command(my_client, SSD1306_LCDWIDTH-1); // Column end address (127 = reset)
@@ -490,9 +453,9 @@ void SDD1306_clear_buffer(struct i2c_client *my_client){
     }
 }
 void SDD1306_display(struct i2c_client *my_client,uint16_t ascii){
-		printk(KERN_NOTICE "%d\n",ascii);
+	printk(KERN_NOTICE "%d\n",ascii);
 	sdd1306_writedatablock(my_client,font+ascii,8);
-	printk(KERN_NOTICE "FURULA\n");
+
 }
 
 void SDD1306_zero_init(struct i2c_client *my_client,SDD1306 *SDDBUFFER){
@@ -669,10 +632,10 @@ int SDD1306_i2c_probe(struct i2c_client * client,
 			printk(KERN_NOTICE"%s GPIO DOWN\n",KBUILD_MODNAME);
 	      if(irq_BUTTON_LEFT) free_irq(irq_BUTTON_LEFT, GPIO_BUTTON_DEVICE_DESC);   //libera irq
     		gpio_free(GPIO_BUTTON_LEFT);  // libera GPIO
-			printk(KERN_NOTICE "%s GPIO LEFT\n");
+			printk(KERN_NOTICE "%s GPIO LEFT\n",KBUILD_MODNAME);
     	  if(irq_BUTTON_RIGHT) free_irq(irq_BUTTON_RIGHT, GPIO_BUTTON_DEVICE_DESC);   //libera irq
     		gpio_free(GPIO_BUTTON_RIGHT);  // libera GPIO
- 			printk(KERN_NOTICE "%s GPIO RIGHT\n");	
+ 			printk(KERN_NOTICE "%s GPIO RIGHT\n",KBUILD_MODNAME);	
 	}
 	ticks_unsegundo = msecs_to_jiffies(1000);
 	mod_timer(&blink_timer,jiffies+ticks_unsegundo*2);
@@ -690,7 +653,6 @@ int SDD1306_i2c_remove(struct i2c_client *client){
 	kfree(screen->textBuffer);
 	kfree(screen->screenBuffer);	
 
-//	vfree(screen->cursor);
 	put_device(dev);
 	printk(KERN_NOTICE"PASO5\n");
 	kfree(screen);
@@ -713,7 +675,7 @@ int SDD1306_i2c_remove(struct i2c_client *client){
 	flush_scheduled_work();
 	del_timer(&timer);
 	del_timer(&blink_timer);
-	printk(KERN_NOTICE "%s Done. Bye form %s module\n",KBUILD_MODNAME);
+	printk(KERN_NOTICE "Done. Bye form %s module\n",KBUILD_MODNAME);
 	return 0;
 
 
