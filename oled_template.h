@@ -116,6 +116,8 @@ int SDD1306_i2c_remove(struct i2c_client *client);
  * al Device Tree y solo que al ser de un device se le da 
  * su propia estructura
  * */
+ 
+ 
 SDD1306* SSD1306_i2c_register(struct device * dev, 
 				struct i2c_client * client);
 int SDD1306_i2c_add_device(SDD1306 * screen);

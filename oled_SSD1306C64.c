@@ -1,6 +1,9 @@
 #include "oled_template.h"
 #include "oled_ioctl.h"
+
 static SDD1306 *screen_oled;
+//0= negro 1= blanco
+int colorpantalla=0;
 
 void write_struct(char letra){
 	int posText,posScreen,scroll_real;
@@ -128,7 +131,19 @@ void SDD1306_clear_buffer(struct i2c_client *my_client){
     }
 }
 void SDD1306_display(struct i2c_client *my_client,uint16_t ascii){
-	sdd1306_writedatablock(my_client,font+ascii,8);
+	int i=0;
+	uint8_t aux[8];
+	uint16_t letrainv;
+	if(colorpantalla==1){
+		for(i=0;i<=7;i++){
+			letrainv=*(font+ascii+i)^0xFF;
+			aux[i]=letrainv;
+		}
+		sdd1306_writedatablock(my_client,aux,8);
+		
+	}else{
+		sdd1306_writedatablock(my_client,font+ascii,8);
+		}
 }
 
 void SDD1306_zero_init(struct i2c_client *my_client,SDD1306 *SDDBUFFER){
@@ -338,6 +353,19 @@ void ioctl_clean_command(void){
 
 }
 
+void ioctl_inv_command(void){
+	
+	if(colorpantalla==0){
+		colorpantalla=1;
+	}else{
+		colorpantalla=0;
+	}
+	
+	
+	}
+
+
+
 static long clean_all_ioctl(struct file *filep, unsigned int cmd, unsigned long arg){
 
 	switch(cmd){
@@ -345,15 +373,16 @@ static long clean_all_ioctl(struct file *filep, unsigned int cmd, unsigned long 
 		case IO_CLEAN:
 			ioctl_clean_command();
 		break;
+		case IO_INV:
+			ioctl_inv_command();
 		default:
 		return -EINVAL;
 	
 	}
 
 	return 0;
-
-
 }
+
 ssize_t SDD1306_i2c_write(struct file *filep, const char __user *buf, size_t count, loff_t *f_pos){
 		// Prueba de funcionamiento 
 	char letra;
