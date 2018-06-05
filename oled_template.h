@@ -27,11 +27,11 @@
 #define COLSIZE 16
 #define ROWSIZE 8
 #define CHARSIZE 8 
-
-#define GPIO_BUTTON_UP 10
+#define PAGLENGTH 128
+#define GPIO_BUTTON_UP 24 
 #define GPIO_BUTTON_DOWN 17
 #define GPIO_BUTTON_LEFT 22
-#define GPIO_BUTTON_RIGHT 23
+#define GPIO_BUTTON_RIGHT 27
 
 #define GPIO_BUTTON_UP_DESC "Cursor arriba"
 #define GPIO_BUTTON_DOWN_DESC "Cursor abajo"
@@ -57,7 +57,7 @@ struct oled_device {
 
 	int pagina;
 	int columna;	
-	
+	int lastWrite;
 	struct miscdevice miscdev;
 };
 
@@ -161,4 +161,5 @@ void SDD1306_print(SDD1306*SDDBUFFER);
 int SDD1306_scrollup(void);
 void ioctl_clean_command(void);
 void SDD1306_cambiar_ptr(int pagina,int columna);
+void desplazar(uint8_t*letra,int cuenta);
 #endif
