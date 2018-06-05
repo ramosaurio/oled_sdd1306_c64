@@ -32,7 +32,8 @@
 #define GPIO_BUTTON_DOWN 17
 #define GPIO_BUTTON_LEFT 22
 #define GPIO_BUTTON_RIGHT 27
-
+#define SALTO_LINEA 10
+#define TABULACION 9 
 #define GPIO_BUTTON_UP_DESC "Cursor arriba"
 #define GPIO_BUTTON_DOWN_DESC "Cursor abajo"
 #define GPIO_BUTTON_LEFT_DESC "Cursor izquierda"
@@ -161,5 +162,5 @@ void SDD1306_print(SDD1306*SDDBUFFER);
 int SDD1306_scrollup(void);
 void ioctl_clean_command(void);
 void SDD1306_cambiar_ptr(int pagina,int columna);
-void desplazar(uint8_t*letra,int cuenta);
+void desplazar(char charletra,uint8_t* letra,int cuenta);
 #endif
